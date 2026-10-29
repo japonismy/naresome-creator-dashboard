@@ -1,0 +1,36 @@
+name: Expire stale creator data
+on:
+  schedule:
+    - cron: '15 18 * * *'
+  workflow_dispatch:
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+concurrency:
+  group: creator-pages
+  cancel-in-progress: false
+jobs:
+  expiry:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/configure-pages@v5
+        id: pages
+      - name: Check public expiry without cloud queries
+        id: check
+        env:
+          BASE: ${{ steps.pages.outputs.base_url }}
+        run: python scripts/expire-public-release.py --base "$BASE" --output work/expired --github-output "$GITHUB_OUTPUT"
+      - uses: actions/upload-pages-artifact@v3
+        if: steps.check.outputs.expired == 'true'
+        with:
+          path: work/expired
+          retention-days: 1
+      - uses: actions/deploy-pages@v4
+        if: steps.check.outputs.expired == 'true'
+        id: deployment

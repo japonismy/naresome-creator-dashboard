@@ -1,4 +1,5 @@
 name: Publish creator review
+run-name: Publish creator review ${{ inputs.run_id }}
 
 on:
   workflow_dispatch:
