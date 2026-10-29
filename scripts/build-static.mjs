@@ -1,0 +1,22 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import {fileURLToPath} from 'node:url';
+import {spawnSync} from 'node:child_process';
+import {build} from 'vite';
+import react from '@vitejs/plugin-react';
+const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
+const args=process.argv.slice(2),opts={};
+for(let i=0;i<args.length;i+=2){if(!['--data-dir','--base','--out-dir'].includes(args[i])||!args[i+1])throw Error('Use --data-dir <path> --base /repository/ --out-dir <new-directory>');opts[args[i]]=args[i+1];}
+const base=opts['--base']||'/';if(!/^\/(?:[A-Za-z0-9_-]+\/)*$/.test(base))throw Error('Invalid static base path');
+const output=path.resolve(opts['--out-dir']||path.join(root,'work/pages-site'));
+if(output===root||root.startsWith(output+path.sep)||output===path.join(root,'static'))throw Error('Unsafe build destination');
+if(fs.existsSync(output)&&fs.readdirSync(output).length)throw Error('Static output must be new or empty; old release files must not survive');
+const dataDir=path.resolve(opts['--data-dir']||path.join(root,'work/public-data'));
+const validation=spawnSync(process.execPath,['--experimental-strip-types',path.join(root,'scripts/validate-static.mjs'),dataDir],{encoding:'utf8'});
+if(validation.status!==0)throw Error('Public release schema/hash validation failed');
+const manifest=JSON.parse(fs.readFileSync(path.join(dataDir,'manifest.json'),'utf8'));
+if(manifest.schemaVersion!==1||Date.parse(manifest.expiresAt)<=Date.now())throw Error('Public data expired or invalid');
+await build({configFile:false,root:path.join(root,'static'),base,publicDir:path.join(root,'public'),plugins:[react()],resolve:{alias:{'@':root}},build:{outDir:output,emptyOutDir:false,assetsDir:'assets',sourcemap:false}});
+fs.cpSync(dataDir,path.join(output,'data'),{recursive:true,errorOnExist:true,force:false});
+fs.writeFileSync(path.join(output,'.nojekyll'),'');
+console.log(JSON.stringify({output,base,runId:manifest.runId,videos:manifest.videoCount}));

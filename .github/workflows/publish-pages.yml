@@ -1,0 +1,72 @@
+name: Publish creator review
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: Completed, allowlisted GCS public release ID
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+  pages: write
+
+concurrency:
+  group: creator-pages
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate deployment configuration
+        env:
+          GCP_PROVIDER: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          GCP_ACCOUNT: ${{ vars.GCP_PAGES_SERVICE_ACCOUNT }}
+          RELEASE_PREFIX: ${{ vars.PUBLIC_RELEASE_GCS_PREFIX }}
+        run: |
+          test -n "$GCP_PROVIDER"
+          test -n "$GCP_ACCOUNT"
+          test -n "$RELEASE_PREFIX"
+      - uses: actions/configure-pages@v5
+        id: pages
+      - uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_PAGES_SERVICE_ACCOUNT }}
+      - uses: google-github-actions/setup-gcloud@v3
+      - name: Download one verified public release
+        id: release
+        env:
+          RUN_ID: ${{ inputs.run_id }}
+          RELEASE_PREFIX: ${{ vars.PUBLIC_RELEASE_GCS_PREFIX }}
+          LIVE_BASE: ${{ steps.pages.outputs.base_url }}
+        run: python sync/fetch_public_release.py --prefix "$RELEASE_PREFIX" --run-id "$RUN_ID" --output work/public-data --live-base "$LIVE_BASE" --github-output "$GITHUB_OUTPUT"
+      - uses: actions/setup-node@v4
+        if: steps.release.outputs.ready == 'true'
+        with:
+          node-version: 24
+          cache: npm
+      - name: Install pinned source dependencies
+        if: steps.release.outputs.ready == 'true'
+        run: npm ci
+      - name: Build same UI with static data
+        if: steps.release.outputs.ready == 'true'
+        env:
+          REPOSITORY_NAME: ${{ github.event.repository.name }}
+        run: node scripts/build-static.mjs --data-dir work/public-data --base "/$REPOSITORY_NAME/" --out-dir work/pages-site
+      - uses: actions/upload-pages-artifact@v3
+        if: steps.release.outputs.ready == 'true'
+        with:
+          path: work/pages-site
+          retention-days: 1
+      - uses: actions/deploy-pages@v4
+        if: steps.release.outputs.ready == 'true'
+        id: deployment

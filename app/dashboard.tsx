@@ -1,0 +1,89 @@
+'use client';
+import {useEffect,useMemo,useRef,useState} from 'react';
+import {ArrowDown,ArrowLeft,ArrowRight,ArrowUpRight,BookOpen,Film,MessageCircle,Play,Search,X} from 'lucide-react';
+import type {CatalogVideo,Header,Video} from '@/lib/dashboard-schema';
+import Retention from './retention';
+import {fetchCatalog,fetchVideo,dashboardHome} from '@/lib/static-data';
+import {commentParts} from '@/lib/comment-times';
+import WriterFilter from './writer-filter';
+import {listAverages,sortList,type ListSort} from '@/lib/list-metrics';
+import {CURRENT_WRITERS,CURRENT_EDITORS,MEMBER_DIRECTORY_VERSION,writerLabel} from '@/lib/member-directory';
+import {restoreMemberFilters,MEMBER_FILTER_DEFAULTS_VERSION} from '@/lib/member-preferences';
+const number=(v:number|null|undefined)=>v==null?'—':v.toLocaleString('ja-JP');
+const time=(n:number)=>Math.floor(n/60)+':'+String(Math.floor(n%60)).padStart(2,'0');
+const date=(v:string|null)=>v?new Date(v).toLocaleDateString('ja-JP',{timeZone:'Asia/Tokyo',year:'numeric',month:'2-digit',day:'2-digit'}):'公開日未確認';
+const releaseDate=(v:string|null)=>v?new Date(v).toLocaleDateString('ja-JP',{timeZone:'Asia/Tokyo',year:'numeric',month:'long',day:'numeric'})+'公開':'公開日未確認';
+const monthLabel=(v:string)=>v.split('-')[0]+'年'+Number(v.split('-')[1])+'月公開';
+const day=(v:string|null)=>v?new Date(v).toLocaleDateString('sv-SE',{timeZone:'Asia/Tokyo'}):'';
+const cleanTitle=(v:string)=>v.replace(/^【2ch馴れ初め】/,'');
+const attainment=(v:number|null)=>v==null?'集計待ち':v<50000?'5万まであと '+number(50000-v):Math.floor(v/50000)*5+'万到達';
+function Creators({video}:{video:Video|CatalogVideo}){return <div className="creators"><span className="role-chip writer-chip">ライター：<b>{writerLabel(video.writer)||'未登録'}</b></span><span className="role-chip editor-chip">編集：<b>{video.editor||'未登録'}</b></span></div>;}
+function EngagedValue({video}:{video:Video|CatalogVideo}){
+ const waiting=video.engagedViews==null;
+ const label=video.engaged.status==='stale'?'再取得待ち':video.engaged.status==='error'||video.engaged.status==='forbidden'?'取得待ち':'集計待ち';
+ return <><strong className={waiting?'engaged-pending':undefined}>{waiting?label:number(video.engagedViews)}</strong>{!waiting&&<small className={'milestone '+(video.engagedViews!>=50000?'achieved':'')}>{attainment(video.engagedViews)}</small>}</>;
+}
+function ListMetrics({video}:{video:CatalogVideo}){
+ const averages=listAverages(video);
+ const source='累計の取得値。Analyticsの集計済み期間と、再生・反応の取得時点は異なる場合があります。';
+ const period=video.reviewMetrics?.lifetime?.endDate||video.average.availableThrough||'未確認';
+ return <div className="list-metrics" aria-label="比較する数値">
+  <div className="list-metric list-views" title={'取得：'+date(video.metadataFetchedAt)}><span>視聴回数</span><strong>{number(video.views)}</strong></div>
+  <div className="list-metric list-ev creator-ev" title={'Analytics：'+(video.engaged.availableThrough||'未確認')+'まで'}><span>エンゲージビュー</span><div className="list-value"><strong className={video.engagedViews==null?'engaged-pending':undefined}>{video.engagedViews==null?(video.engaged.status==='stale'?'再取得待ち':video.engaged.status==='error'||video.engaged.status==='forbidden'?'取得待ち':'集計待ち'):number(video.engagedViews)}</strong>{video.engagedViews!=null&&<small className={'list-attainment '+(video.engagedViews>=50000?'achieved':'')} title={attainment(video.engagedViews)}>{video.engagedViews>=50000?Math.floor(video.engagedViews/50000)*5+'万到達':'5万未満'}</small>}</div></div>
+  <div className="list-metric" title={'Analytics：'+period+'まで'}><span>平均視聴時間</span><strong className={averages.duration==null?'metric-pending':undefined}>{averages.duration==null?'集計待ち':time(averages.duration)}</strong></div>
+  <div className="list-metric" title={'動画全体の平均。特定時刻の維持率ではありません。Analytics：'+period+'まで'}><span>平均再生率</span><strong className={averages.percentage==null?'metric-pending':undefined}>{averages.percentage==null?'集計待ち':averages.percentage.toFixed(1)+'%'}</strong></div>
+  <div className="list-metric list-reaction" title={source}><span>高評価</span><strong>{number(video.likes)}</strong></div>
+  <div className="list-metric list-reaction" title={source}><span>コメント</span><strong>{number(video.commentCount)}</strong></div>
+ </div>;
+}
+type Player={getCurrentTime:()=>number;seekTo:(n:number,a:boolean)=>void;playVideo:()=>void;destroy:()=>void};
+declare global{interface Window{YT?:{Player:new(el:HTMLElement,config:unknown)=>Player};onYouTubeIframeAPIReady?:()=>void;}}
+let ytPromise:Promise<void>|null=null;
+function youtubeReady(){if(window.YT?.Player)return Promise.resolve();if(!ytPromise)ytPromise=new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(new Error('player_unavailable')),15000);window.onYouTubeIframeAPIReady=()=>{clearTimeout(timer);resolve();};const script=document.createElement('script');script.src='https://www.youtube.com/iframe_api';script.onerror=()=>{clearTimeout(timer);reject(new Error('player_unavailable'));};document.head.appendChild(script);});return ytPromise;}
+
+
+function Detail({video,onClose}:{video:Video;onClose:()=>void}){
+ const target=useRef<HTMLDivElement>(null),player=useRef<Player|null>(null),pending=useRef<number|null>(null),ready=useRef(false);
+ const [position,setPosition]=useState(0),[playerError,setPlayerError]=useState(false),[loaded,setLoaded]=useState(false),[tab,setTab]=useState('graph'),[query,setQuery]=useState(''),[order,setOrder]=useState('new');
+ useEffect(()=>{let disposed=false;ready.current=false;pending.current=null;
+  if(video.embeddable)youtubeReady().then(()=>{if(disposed||!target.current||!window.YT)return;const mount=document.createElement('div');target.current.replaceChildren(mount);player.current=new window.YT.Player(mount,{videoId:video.videoId,playerVars:{origin:location.origin,playsinline:1,rel:0},events:{onReady:()=>{if(disposed)return;ready.current=true;setLoaded(true);if(pending.current!=null){player.current?.seekTo(pending.current,true);player.current?.playVideo();pending.current=null;}},onError:()=>setPlayerError(true)}});}).catch(()=>{if(!disposed)setPlayerError(true);});
+  const timer=setInterval(()=>{if(!document.hidden&&ready.current&&player.current){const n=player.current.getCurrentTime();if(Number.isFinite(n))setPosition(n);}},350);
+  return()=>{disposed=true;ready.current=false;clearInterval(timer);player.current?.destroy();player.current=null;};
+ },[video.videoId,video.embeddable]);
+ function seek(n:number){n=Math.max(0,Math.min(video.durationSeconds,n));setPosition(n);if(ready.current&&player.current){player.current.seekTo(n,true);player.current.playVideo();}else pending.current=n;}
+ const comments=video.comments.items.filter(c=>c.text.toLowerCase().includes(query.toLowerCase())).sort((a,b)=>order==='liked'?b.likes-a.likes:b.publishedAt.localeCompare(a.publishedAt));
+ return <div className="detail-view creator-detail">
+  <button className="back-button" onClick={onClose}><ArrowLeft size={16}/>動画一覧へ戻る</button>
+  <div className="detail-heading"><h1>{cleanTitle(video.title)}</h1><div className="detail-meta"><span>{releaseDate(video.publishedAt)} · {time(video.durationSeconds)}</span><Creators video={video}/></div></div>
+  <div className="creator-overview"><div><span>エンゲージビュー</span><EngagedValue video={video}/></div>{video.scriptUrl&&<a className="button" href={video.scriptUrl} target="_blank" rel="noopener noreferrer"><BookOpen size={16}/>台本を開く<ArrowUpRight size={14}/></a>}</div>
+  <div className="mobile-review-tabs segmented" aria-label="詳細の表示"><button className={tab==='graph'?'active':''} aria-pressed={tab==='graph'} onClick={()=>setTab('graph')}>動画・グラフ</button><button className={tab==='comments'?'active':''} aria-pressed={tab==='comments'} onClick={()=>setTab('comments')}>コメント</button></div>
+  <div className={'creator-review-workspace tab-'+tab}>
+  <div id="creator-graph"><Retention video={video} position={position} onSeek={seek} player={<><div className="player-shell">{video.embeddable&&!playerError?<><div className="player-mount" ref={target}/>{!loaded&&<div className="player-poster"><img src={'https://i.ytimg.com/vi/'+video.videoId+'/mqdefault.jpg'} alt=""/><span>読み込み中…</span></div>}</>:<div className="player-unavailable"><a className="button" href={'https://www.youtube.com/watch?v='+video.videoId} target="_blank" rel="noopener noreferrer">YouTubeで見る<ArrowUpRight size={14}/></a></div>}</div><div className="player-caption"><span>再生位置 <strong>{time(position)}</strong></span><a href={'https://www.youtube.com/watch?v='+video.videoId+'&t='+Math.floor(position)} target="_blank" rel="noopener noreferrer">YouTubeで開く</a></div><input className="player-timeline" aria-label="動画の再生位置" type="range" min="0" max={video.durationSeconds} step="1" value={position} onChange={e=>seek(Number(e.target.value))}/><div className="player-controls"><button onClick={()=>seek(position-10)}>−10秒</button><button onClick={()=>seek(position)}><Play size={14}/>再生</button><button onClick={()=>seek(position+10)}>＋10秒</button></div></>}/></div>
+  <section id="creator-comments" className="panel comments-panel"><div className="section-heading"><div><h2><MessageCircle size={20}/>視聴者の声</h2></div><span className="comment-count">{comments.length}件</span></div><div className="comment-controls"><div className="search-field"><Search size={16}/><input aria-label="コメントを検索" placeholder="コメントを検索" value={query} onChange={e=>setQuery(e.target.value)}/></div><select aria-label="コメントの並び順" value={order} onChange={e=>setOrder(e.target.value)}><option value="new">新着順</option><option value="liked">高評価順</option></select></div>
+   {comments.length?<div className="comment-list">{comments.map(c=><article className="comment" key={c.id}><div className="comment-avatar"><MessageCircle size={16}/></div><div><div className="comment-meta"><span>{date(c.publishedAt)}</span><a href={'https://www.youtube.com/watch?v='+video.videoId+'&lc='+encodeURIComponent(c.id)} target="_blank" rel="noopener noreferrer" aria-label="元のコメントを開く"><ArrowUpRight size={16}/></a></div><p>{commentParts(c.text,video.durationSeconds).map((part,i)=>part.seconds==null?<span key={i}>{part.text}</span>:<button key={i} className="comment-time" onClick={()=>{seek(part.seconds!);setTab('graph');}}>{part.text}</button>)}</p><span className="comment-likes">♡ {number(c.likes)}</span></div></article>)}</div>:<div className="empty-comments">{query?'一致するコメントはありません。':video.comments.status==='disabled'?'コメントは無効です。':'コメントはまだありません。'}</div>}
+   <details className="data-note"><summary>取得範囲</summary><p>最新の公開トップコメント、最大100件。{date(video.comments.fetchedAt)}取得。{video.comments.status==='stale'?'前回のデータです。':''}</p></details>
+  </section>
+  </div>
+ </div>;
+}
+export default function Dashboard(){
+ const [currentWriters,setCurrentWriters]=useState<string[]>(CURRENT_WRITERS),[currentEditors,setCurrentEditors]=useState<string[]>(CURRENT_EDITORS),[currentOnly,setCurrentOnly]=useState(true),[currentEditorOnly,setCurrentEditorOnly]=useState(true),[filtersReady,setFiltersReady]=useState(false);
+ const [videos,setVideos]=useState<CatalogVideo[]>([]),[header,setHeader]=useState<Header|null>(null),[loading,setLoading]=useState(true),[error,setError]=useState(''),[syncError,setSyncError]=useState(false),[active,setActive]=useState<Video|null>(null),[opening,setOpening]=useState(false);
+ const [query,setQuery]=useState(''),[writer,setWriter]=useState(''),[editor,setEditor]=useState(''),[month,setMonth]=useState(''),[sort,setSort]=useState<ListSort>('new'),[page,setPage]=useState(1);
+ useEffect(()=>{try{const s=restoreMemberFilters(localStorage.getItem('naresome-filters'));setWriter(s.writer);setEditor(s.editor);setCurrentWriters(s.currentWriters);setCurrentEditors(s.currentEditors);setCurrentOnly(s.currentOnly);setCurrentEditorOnly(s.currentEditorOnly);}catch{}setFiltersReady(true);fetchCatalog().then(d=>{setVideos(d.videos);setHeader(d.header);setSyncError(d.sync?.status==='error');}).catch(e=>setError(e.message)).finally(()=>setLoading(false));},[]);
+ useEffect(()=>{if(filtersReady)try{localStorage.setItem('naresome-filters',JSON.stringify({directoryVersion:MEMBER_DIRECTORY_VERSION,filterDefaultsVersion:MEMBER_FILTER_DEFAULTS_VERSION,writer,editor,currentWriters,currentEditors,currentOnly,currentEditorOnly}));}catch{}},[filtersReady,writer,editor,currentWriters,currentEditors,currentOnly,currentEditorOnly]);
+ const filtered=useMemo(()=>sortList(videos.filter(v=>(!currentOnly||currentWriters.includes(v.writer))&&(!currentEditorOnly||currentEditors.includes(v.editor))&&(!writer||v.writer===writer)&&(!editor||v.editor===editor)&&(!query||(v.title+' '+v.productionNo).toLowerCase().includes(query.toLowerCase()))&&(!month||day(v.publishedAt).slice(0,7)===month)),sort),[videos,currentOnly,currentEditorOnly,currentWriters,currentEditors,writer,editor,query,month,sort]);
+ useEffect(()=>setPage(1),[currentOnly,currentEditorOnly,currentWriters,currentEditors,writer,editor,query,month,sort]);
+ const writers=[...new Set(videos.map(v=>v.writer).filter(Boolean))].filter(n=>!currentOnly||currentWriters.includes(n)).sort(),editors=[...new Set(videos.map(v=>v.editor).filter(Boolean))].filter(n=>!currentEditorOnly||currentEditors.includes(n)).sort(),months=[...new Set(videos.map(v=>day(v.publishedAt).slice(0,7)).filter(Boolean))].sort().reverse();
+ async function open(id:string){setOpening(true);setError('');try{const d=await fetchVideo(id);setActive(d.video);window.scrollTo({top:0,behavior:'instant'});}catch(e){setError((e as Error).message);}finally{setOpening(false);}}
+ function reset(){setQuery('');setWriter('');setEditor('');setMonth('');setSort('new');setCurrentOnly(true);setCurrentEditorOnly(true);setCurrentWriters(CURRENT_WRITERS);setCurrentEditors(CURRENT_EDITORS);}
+ const stale=header&&Date.now()-Date.parse(header.generatedAt)>48*3600000;
+ return <div className="creator-shell"><header className="creator-header"><a href={dashboardHome()}>馴れ初めシネマ <span>制作レビュー</span></a><small>{header?'更新 '+date(header.generatedAt):''}</small></header><main className="creator-main">{error&&<div className="notice error-notice">{error}<button aria-label="閉じる" onClick={()=>setError('')}><X size={16}/></button></div>}{(stale||syncError)&&<div className="notice">前回取得したデータを表示しています。</div>}{opening&&<div className="loading-overlay">読み込み中…</div>}
+ {active?<Detail key={active.videoId} video={active} onClose={()=>{setActive(null);window.scrollTo({top:0,behavior:'instant'});}}/>:<><div className="creator-page-heading"><h1>動画一覧</h1><span>{filtered.length}件</span><label className="list-sort">並び順<select aria-label="作品の並び順" value={sort} onChange={e=>setSort(e.target.value as ListSort)}><option value="new">公開日が新しい順</option><option value="number">動画番号が大きい順</option><option value="engaged">エンゲージビュー順</option><option value="views">視聴回数順</option><option value="percentage">平均再生率が高い順</option><option value="duration">平均視聴時間が長い順</option><option value="likes">高評価数順</option><option value="comments">コメント数順</option></select></label></div><section className="panel creator-filters"><div className="quick-filters"><label className="publication-month">公開月<select aria-label="公開月" value={month} onChange={e=>setMonth(e.target.value)}><option value="">すべての公開月</option>{months.map(n=><option key={n} value={n}>{monthLabel(n)}</option>)}</select></label><div className="search-field"><Search size={18}/><input aria-label="作品を検索" placeholder="タイトル・動画番号" value={query} onChange={e=>setQuery(e.target.value)}/></div><label>ライター<select aria-label="ライター" value={writer} onChange={e=>setWriter(e.target.value)}><option value="">すべて</option>{writers.map(n=><option key={n} value={n}>{writerLabel(n)}</option>)}</select></label><label>編集者<select aria-label="編集者" value={editor} onChange={e=>setEditor(e.target.value)}><option value="">すべて</option>{editors.map(n=><option key={n}>{n}</option>)}</select></label></div><details className="filter-options"><summary>絞り込み設定</summary><WriterFilter names={CURRENT_WRITERS} selected={currentWriters} currentOnly={currentOnly} onToggle={b=>{setCurrentOnly(b);setWriter('');}} onChange={names=>{setCurrentWriters(names);setWriter('');}}/><WriterFilter roleLabel="編集者" names={CURRENT_EDITORS} selected={currentEditors} currentOnly={currentEditorOnly} onToggle={b=>{setCurrentEditorOnly(b);setEditor('');}} onChange={names=>{setCurrentEditors(names);setEditor('');}}/><div className="filter-row"><button className="reset-button" onClick={reset}>リセット</button></div></details></section>
+ {loading?<div className="loading-state">読み込み中…</div>:!filtered.length?<div className="panel empty-list">該当する動画がありません。<button className="reset-button" onClick={reset}>絞り込みを解除</button></div>:<div className="creator-video-list">{filtered.slice(0,page*24).map(v=><article className="creator-video-row video-row comparison-row" key={v.videoId}>
+  <button className="video-number" aria-label={v.productionNo+'番の詳細を見る'} onClick={()=>open(v.videoId)}><span>No.</span><strong>{v.productionNo}</strong></button>
+  <button className="thumbnail" aria-label={v.productionNo+'番の作品を開く'} onClick={()=>open(v.videoId)}><img src={'https://i.ytimg.com/vi/'+v.videoId+'/mqdefault.jpg'} loading="lazy" alt=""/><span>{time(v.durationSeconds)}</span></button>
+  <div className="list-content"><div className="list-title-line"><button className="video-title" onClick={()=>open(v.videoId)}>{cleanTitle(v.title)}</button><button className="open-review creator-open" onClick={()=>open(v.videoId)} aria-label={v.productionNo+'番のレビューを開く'}>確認する<ArrowRight size={16}/></button></div><div className="list-meta"><span className="video-kicker">{releaseDate(v.publishedAt)}</span><Creators video={v}/></div><ListMetrics video={v}/></div>
+ </article>)}</div>}{page*24<filtered.length&&<button className="button load-more" onClick={()=>setPage(page+1)}>さらに表示<ArrowDown size={16}/></button>}</>}
+ </main></div>;
+}
