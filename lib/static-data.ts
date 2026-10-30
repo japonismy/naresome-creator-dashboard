@@ -1,4 +1,4 @@
-import {videoWriter} from './member-directory';
+import {videoWriter,memberName} from './member-directory';
 import type {CatalogVideo,Header,Video} from './dashboard-schema';
 
 type FileRef={path:string;sha256:string};
@@ -6,7 +6,7 @@ type PublicManifest={schemaVersion:1;runId:string;generatedAt:string;expiresAt:s
 type Catalog={videos:CatalogVideo[];header:Header|null;sync:{status:string}|null};
 declare global {interface Window {__NARESOME_STATIC__?:{manifestUrl:string;homeUrl:string};}}
 let pinned:PublicManifest|null=null;
-const withWriter=<T extends {writer:string;productionNo:number}>(v:T):T=>({...v,writer:videoWriter(v.writer,v.productionNo)});
+const withWriter=<T extends {writer:string;editor:string;productionNo:number}>(v:T):T=>({...v,writer:videoWriter(v.writer,v.productionNo),editor:memberName('editor',v.editor)});
 const withCatalogWriters=(d:Catalog):Catalog=>({...d,videos:d.videos.map(withWriter)});
 
 export function dashboardHome(){return typeof window!=='undefined'&&window.__NARESOME_STATIC__?window.__NARESOME_STATIC__.homeUrl:'/';}

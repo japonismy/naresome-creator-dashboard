@@ -1,4 +1,4 @@
-import {CURRENT_WRITERS,CURRENT_EDITORS,MEMBER_DIRECTORY_VERSION,memberName} from './member-directory';
+import {CURRENT_WRITERS,CURRENT_EDITORS,MEMBER_DIRECTORY_VERSION} from './member-directory';
 export const MEMBER_FILTER_DEFAULTS_VERSION='20261028-current-team-v2';
 export function restoreMemberFilters(raw:string|null){
   let saved:Record<string,unknown>={};try{saved=JSON.parse(raw||'{}');if(!saved||typeof saved!=='object')saved={};}catch{}
@@ -8,9 +8,7 @@ export function restoreMemberFilters(raw:string|null){
   const editors=current?subset(saved.currentEditors,CURRENT_EDITORS):[...CURRENT_EDITORS];
   const defaultsCurrent=current&&saved.filterDefaultsVersion===MEMBER_FILTER_DEFAULTS_VERSION;
   const currentOnly=defaultsCurrent?saved.currentOnly!==false:true,currentEditorOnly=defaultsCurrent?saved.currentEditorOnly!==false:true;
-  let writer=typeof saved.writer==='string'?memberName('writer',saved.writer):'';
-  let editor=typeof saved.editor==='string'?memberName('editor',saved.editor):'';
-  if(currentOnly&&!writers.includes(writer))writer='';
-  if(currentEditorOnly&&!editors.includes(editor))editor='';
+  // An individual selected last visit must never become the initial filter.
+  const writer='',editor='';
   return {writer,editor,currentWriters:writers,currentEditors:editors,currentOnly,currentEditorOnly};
 }
