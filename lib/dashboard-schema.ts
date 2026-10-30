@@ -21,6 +21,7 @@ export const videoSchema = z.object({
 });
 export type Video=z.infer<typeof videoSchema>;
 export const headerSchema=z.object({
+  memberDirectory:z.object({writers:z.array(z.string().max(150)).max(100),editors:z.array(z.string().max(150)).max(100)}).strict().optional(),
   schemaVersion:z.literal(1),runId:z.string().regex(/^[a-zA-Z0-9_-]{8,100}$/),channelId:z.literal('UCaltBBIFhAqt8_ECttdKgsw'),generatedAt:dateTime,
   engagedThrough:z.string().nullable(),videoCount:z.number().int().min(1).max(1000),checksum:z.string().regex(/^[a-f0-9]{64}$/),warnings:z.array(z.string().max(500)).max(100),
   visibility:z.array(z.object({videoId:z.string().regex(/^[\w-]{11}$/),status:z.enum(['public','hidden'])}).strict()).max(1200),

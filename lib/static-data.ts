@@ -1,3 +1,4 @@
+import {videoWriter} from './member-directory';
 import type {CatalogVideo,Header,Video} from './dashboard-schema';
 
 type FileRef={path:string;sha256:string};
@@ -5,6 +6,8 @@ type PublicManifest={schemaVersion:1;runId:string;generatedAt:string;expiresAt:s
 type Catalog={videos:CatalogVideo[];header:Header|null;sync:{status:string}|null};
 declare global {interface Window {__NARESOME_STATIC__?:{manifestUrl:string;homeUrl:string};}}
 let pinned:PublicManifest|null=null;
+const withWriter=<T extends {writer:string;productionNo:number}>(v:T):T=>({...v,writer:videoWriter(v.writer,v.productionNo)});
+const withCatalogWriters=(d:Catalog):Catalog=>({...d,videos:d.videos.map(withWriter)});
 
 export function dashboardHome(){return typeof window!=='undefined'&&window.__NARESOME_STATIC__?window.__NARESOME_STATIC__.homeUrl:'/';}
 function config(){return typeof window!=='undefined'?window.__NARESOME_STATIC__:undefined;}
@@ -23,21 +26,21 @@ async function verified<T>(ref:FileRef,m:PublicManifest):Promise<T>{
 }
 export async function fetchCatalog():Promise<Catalog>{
  const settings=config();
- if(!settings){const r=await fetch('/api/catalog',{cache:'no-store'});if(!r.ok)throw Error('一覧を取得できませんでした。');return r.json() as Promise<Catalog>;}
+ if(!settings){const r=await fetch('/api/catalog',{cache:'no-store'});if(!r.ok)throw Error('一覧を取得できませんでした。');return withCatalogWriters(await r.json() as Catalog);}
  const response=await fetch(settings.manifestUrl,{cache:'no-store'});if(!response.ok)throw Error('一覧を取得できませんでした。');
  const m=await response.json() as PublicManifest;
  if(m.schemaVersion!==1||!/^[a-zA-Z0-9_-]{8,100}$/.test(m.runId)||!m.catalog||!m.videos)throw Error('表示データの形式が不正です。');
  ensureFresh(m);const data=await verified<Catalog>(m.catalog,m);if(data.header?.runId!==m.runId)throw Error('表示データの世代が一致しません。');
- pinned=m;return data;
+ pinned=m;return withCatalogWriters(data);
 }
 export async function fetchVideo(id:string):Promise<{video:Video;header:Header}>{
  if(!/^[\w-]{11}$/.test(id))throw Error('動画が見つかりません。');
- if(!config()){const r=await fetch('/api/videos/'+id,{cache:'no-store'});if(!r.ok)throw Error('動画を取得できませんでした。');return r.json() as Promise<{video:Video;header:Header}>;}
+ if(!config()){const r=await fetch('/api/videos/'+id,{cache:'no-store'});if(!r.ok)throw Error('動画を取得できませんでした。');const d=await r.json() as {video:Video;header:Header};return {...d,video:withWriter(d.video)};}
  if(!pinned||!pinned.videos[id])throw Error('動画が見つかりません。ページを再読み込みしてください。');
  const data=await verified<{video:Video;header:Header}>(pinned.videos[id],pinned);
  if(data.header.runId!==pinned.runId||data.video.videoId!==id)throw Error('表示データの世代が一致しません。');
  // A tab can remain open across refreshes; never display comment text beyond its retention window.
  const fetched=data.video.comments.fetchedAt;
  if(!fetched||Date.now()-Date.parse(fetched)>=30*86400000)data.video.comments={...data.video.comments,status:'stale',items:[]};
- return data;
+ return {...data,video:withWriter(data.video)};
 }
