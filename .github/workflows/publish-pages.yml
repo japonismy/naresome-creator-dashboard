@@ -8,6 +8,10 @@ on:
         description: Completed, allowlisted GCS public release ID
         required: true
         type: string
+      refresh_ui:
+        description: Rebuild UI using the same verified data release
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -48,8 +52,12 @@ jobs:
         env:
           RUN_ID: ${{ inputs.run_id }}
           RELEASE_PREFIX: ${{ vars.PUBLIC_RELEASE_GCS_PREFIX }}
+          REFRESH_UI: ${{ inputs.refresh_ui }}
           LIVE_BASE: ${{ steps.pages.outputs.base_url }}
-        run: python sync/fetch_public_release.py --prefix "$RELEASE_PREFIX" --run-id "$RUN_ID" --output work/public-data --live-base "$LIVE_BASE" --github-output "$GITHUB_OUTPUT"
+        run: |
+          extra_args=()
+          if [ "$REFRESH_UI" = "true" ]; then extra_args+=(--refresh-ui); fi
+          python sync/fetch_public_release.py --prefix "$RELEASE_PREFIX" --run-id "$RUN_ID" --output work/public-data --live-base "$LIVE_BASE" --github-output "$GITHUB_OUTPUT" "${extra_args[@]}"
       - uses: actions/setup-node@v4
         if: steps.release.outputs.ready == 'true'
         with:

@@ -50,6 +50,7 @@ def extract(archive:Path,output:Path,run_id:str):
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--prefix',required=True);parser.add_argument('--run-id',required=True);parser.add_argument('--output',required=True,type=Path);parser.add_argument('--live-base');parser.add_argument('--github-output',type=Path)
+    parser.add_argument('--refresh-ui',action='store_true',help='Rebuild UI from the same verified release')
     args=parser.parse_args()
     if not re.fullmatch(r'[a-zA-Z0-9_-]{8,100}',args.run_id):raise ValueError('Invalid run id')
     if not re.fullmatch(r'gs://[a-z0-9][a-z0-9._-]+/[A-Za-z0-9/_-]+',args.prefix.rstrip('/')):raise ValueError('Invalid release prefix')
@@ -64,7 +65,7 @@ def main():
         try:live=json.loads(request(args.live_base.rstrip('/')+'/data/manifest.json',256*1024))
         except urllib.error.HTTPError as error:
             if error.code!=404:raise
-        if live and live.get('runId')==args.run_id:
+        if live and live.get('runId')==args.run_id and not args.refresh_ui:
             ready(False);print(json.dumps({'skipped':'already_published','runId':args.run_id}));return
     token_result=subprocess.run(['gcloud','auth','print-access-token'],capture_output=True,text=True,check=True)
     token=token_result.stdout.strip()
