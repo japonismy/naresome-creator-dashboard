@@ -1,12 +1,12 @@
 // Current team confirmed by the owner on 2026-10-28. Names follow Discord.
-export const MEMBER_DIRECTORY_VERSION='20261030-distinct-chi-v2';
-export const CURRENT_WRITERS=['黒猫美味しい','ことり','めろこ','ちぃ','下田','takoyakiyaketane'];
+export const MEMBER_DIRECTORY_VERSION='20261030-sasaki-v3';
+export const CURRENT_WRITERS=['sasaki4070','黒猫美味しい','ことり','めろこ','ちぃ','下田','takoyakiyaketane'];
 export const CURRENT_EDITORS=['ju.','土屋','honami','mi.','syaruru','福ミツル'];
 export function writerLabel(name:string){return memberName('writer',name);}
 export function memberName(role:'writer'|'editor',value:string){
   const name=value.trim();
   const normalized=name.normalize('NFKC');
-  const aliases:Record<string,string>=role==='writer'?{'うり':'ことり','ことり(旧うり)':'ことり','黒猫おいしい':'黒猫美味しい'}:{};
+  const aliases:Record<string,string>=role==='writer'?{'うり':'ことり','ことり(旧うり)':'ことり','黒猫おいしい':'黒猫美味しい','SASAKI':'sasaki4070','SASAKI(シ)':'sasaki4070','SASAKI.moji':'sasaki4070','@sasaki4070':'sasaki4070'}:{};
   return aliases[normalized]??name;
 }
 
