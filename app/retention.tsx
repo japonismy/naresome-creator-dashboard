@@ -2,6 +2,7 @@
 import {useEffect,useMemo,useRef,useState,type ReactNode} from 'react';
 import {Play} from 'lucide-react';
 import type {Video} from '@/lib/dashboard-schema';
+import {metricLabel} from '@/lib/data-state';
 import {localMoments,prioritizedMoments} from '@/lib/review-analysis';
 const time=(n:number)=>Math.floor(n/60)+':'+String(Math.floor(n%60)).padStart(2,'0');
 const percent=(n:number)=>(n*100).toFixed(1)+'%';
@@ -50,8 +51,9 @@ export default function Retention({video,position,onSeek,player}:{video:Video;po
         {point&&end<=limit&&<g><line x1={x(end)} x2={x(end)} y1={top} y2={height-bottom} stroke="var(--chart-line)" opacity=".65"/><circle cx={x(end)} cy={y(point.value)} r="5" fill="var(--chart-line)" stroke="var(--surface)" strokeWidth="2"/></g>}
       </svg>
       <div className="graph-footer"><span>{zoom?'冒頭2分 · ':''}グラフを押すと再生</span><button className="text-button" onClick={()=>onSeek(Math.max(0,start-5))}><Play size={14}/>少し前から再生</button></div>
-    </>:<div className="empty-graph"><h4>維持率データは集計待ちです</h4><p>取得後にグラフと確認ポイントを表示します。</p></div>}
+    </>:<div className="empty-graph"><h4>維持率：{metricLabel(video.retention.status)}</h4><p>{video.retention.status==='error'||video.retention.status==='forbidden'?'維持率データを取得できませんでした。':'取得後にグラフと確認ポイントを表示します。'}</p></div>}
     </div><div className="video-column">{player}</div></div>
+    {video.retention.status==='stale'&&<p className="data-note" role="status">維持率の再取得待ちです。前回取得分を表示しています。</p>}
     {features.some(f=>f.start<limit)&&<div className="feature-list">{features.filter(f=>f.start<limit).map((f,i)=><button key={f.kind} className={'feature-card '+f.kind+(selected===f.index?' selected':'')} onClick={()=>showFeature(f.index)}><span className="feature-icon">{i+1}</span><span><strong>{f.kind==='dip'?'低下区間を確認':'山の前後を確認'}</strong><small>{time(f.start)}–{time(f.end)}{f.kind==='dip'?' · '+f.drop.toFixed(1)+'ポイント低下':''}</small></span><Play size={18}/></button>)}</div>}
     {selected!=null&&<p className="reflection-prompt">この前後で、話の進み方や見せ方はどう変わった？</p>}
     <div className="review-section-footer"><details className="data-note"><summary>グラフの見方</summary><p>冒頭から確認し、気になる位置を押して再生してください。山は見返しやスキップ先、谷はスキップや視聴終了などの候補です。原因や良し悪しは、動画・台本・コメントを照らし合わせて振り返ります。</p><p>累計・100区間のデータ（約{Math.round(video.durationSeconds/100)}秒単位）。表示値は取得区間の値で、正確な離脱秒や30秒時点の値ではありません。低下ポイントは隣接する取得区間の差（後半候補は前後の区間平均の差）です。3ポイント未満の低下は確認ボタンを出していません。候補はサイト独自の抽出で、Studioの判定とは異なります。{video.retention.status==='stale'?'前回のデータです。':''}</p><a href="https://support.google.com/youtube/answer/9314415?hl=ja" target="_blank" rel="noopener noreferrer">YouTube公式：視聴者維持率の見方 ↗</a></details></div>

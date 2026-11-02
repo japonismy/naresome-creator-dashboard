@@ -18,7 +18,7 @@ function load(ref){
  if(crypto.createHash('sha256').update(data).digest('hex')!==ref.sha256)throw Error('Release checksum mismatch');
  return JSON.parse(data.toString('utf8'));
 }
-const catalogSchema=z.object({header:headerSchema,videos:z.array(videoSchema.innerType().omit({comments:true,retention:true}).extend({retentionStatus:allowedStatus,commentsStatus:allowedStatus,storedComments:z.number().int().min(0).max(100)}).strict()).max(1000),sync:z.object({status:z.literal('ok')}).strict()}).strict();
+const catalogSchema=z.object({header:headerSchema,videos:z.array(videoSchema.innerType().omit({comments:true,retention:true}).extend({retentionStatus:allowedStatus,commentsStatus:allowedStatus,storedComments:z.number().int().min(0).max(100)}).strict()).max(1000),sync:z.object({status:z.enum(['ok','partial'])}).strict()}).strict();
 const catalog=catalogSchema.parse(load(manifest.catalog));
 const ids=catalog.videos.map(v=>v.videoId);
 if(new Set(ids).size!==ids.length||new Set(catalog.videos.map(v=>v.productionNo)).size!==ids.length||ids.length!==manifest.videoCount||Object.keys(manifest.videos).length!==ids.length||catalog.header.runId!==manifest.runId||catalog.header.videoCount!==ids.length)throw Error('Catalog identity mismatch');

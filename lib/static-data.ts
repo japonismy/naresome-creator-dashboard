@@ -1,3 +1,4 @@
+import {normalizeAnalytics} from './data-state';
 import {videoWriter,memberName} from './member-directory';
 import type {CatalogVideo,Header,Video} from './dashboard-schema';
 
@@ -6,7 +7,7 @@ type PublicManifest={schemaVersion:1;runId:string;generatedAt:string;expiresAt:s
 type Catalog={videos:CatalogVideo[];header:Header|null;sync:{status:string}|null};
 declare global {interface Window {__NARESOME_STATIC__?:{manifestUrl:string;homeUrl:string};}}
 let pinned:PublicManifest|null=null;
-const withWriter=<T extends {writer:string;editor:string;productionNo:number}>(v:T):T=>({...v,writer:videoWriter(v.writer,v.productionNo),editor:memberName('editor',v.editor)});
+const withWriter=<T extends CatalogVideo|Video>(v:T):T=>normalizeAnalytics({...v,writer:videoWriter(v.writer,v.productionNo),editor:memberName('editor',v.editor)});
 const withCatalogWriters=(d:Catalog):Catalog=>({...d,videos:d.videos.map(withWriter)});
 
 export function dashboardHome(){return typeof window!=='undefined'&&window.__NARESOME_STATIC__?window.__NARESOME_STATIC__.homeUrl:'/';}
@@ -41,6 +42,6 @@ export async function fetchVideo(id:string):Promise<{video:Video;header:Header}>
  if(data.header.runId!==pinned.runId||data.video.videoId!==id)throw Error('表示データの世代が一致しません。');
  // A tab can remain open across refreshes; never display comment text beyond its retention window.
  const fetched=data.video.comments.fetchedAt;
- if(!fetched||Date.now()-Date.parse(fetched)>=30*86400000)data.video.comments={...data.video.comments,status:'stale',items:[]};
+ if(!fetched||Date.now()-Date.parse(fetched)>=30*86400000)data.video.comments={...data.video.comments,status:['error','forbidden','disabled','pending','missing'].includes(data.video.comments.status)?data.video.comments.status:'stale',items:[]};
  return {...data,video:withWriter(data.video)};
 }
