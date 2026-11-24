@@ -27,6 +27,7 @@ export function emptyComments(status:Group['status'],query:string){
   return 'コメントはまだありません。';
 }
 export function refreshLate(generatedAt:string,now=Date.now()){
+  if(!Number.isFinite(Date.parse(generatedAt)))return true;
   // Allow an hour for each 02:10/14:10 JST refresh to finish and publish.
   const local=new Date(now+9*3600000),day=Date.UTC(local.getUTCFullYear(),local.getUTCMonth(),local.getUTCDate());
   const schedules=[day-86400000+14*3600000,day+2*3600000,day+14*3600000].map(n=>n+10*60000-9*3600000).filter(n=>n+3600000<=now);

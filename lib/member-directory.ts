@@ -1,6 +1,6 @@
 // Current team confirmed by the owner on 2026-10-28. Names follow Discord.
 export const MEMBER_DIRECTORY_VERSION='20261030-discord-names-v4';
-export const CURRENT_WRITERS=['sasaki4070','黒猫美味しい','ことり','めろこ','ちぃ','下田','takoyakiyaketane'];
+export const CURRENT_WRITERS=['sasaki4070','黒猫美味しい','ことり','ちぃ','下田','takoyakiyaketane'];
 export const CURRENT_EDITORS=['ju','mi','honami','土屋','syaruru','福ミツル'];
 export function writerLabel(name:string){return memberName('writer',name);}
 export function memberName(role:'writer'|'editor',value:string){
