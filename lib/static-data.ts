@@ -28,7 +28,8 @@ async function verified<T>(ref:FileRef,m:PublicManifest):Promise<T>{
 export async function fetchCatalog():Promise<Catalog>{
  const settings=config();
  if(!settings){const r=await fetch('/api/catalog',{cache:'no-store'});if(!r.ok)throw Error('一覧を取得できませんでした。');return withCatalogWriters(await r.json() as Catalog);}
- const response=await fetch(settings.manifestUrl,{cache:'no-store'});if(!response.ok)throw Error('一覧を取得できませんでした。');
+ const latest=new URL(settings.manifestUrl);latest.searchParams.set('_checked',String(Date.now()));
+ const response=await fetch(latest,{cache:'no-store'});if(!response.ok)throw Error('一覧を取得できませんでした。');
  const m=await response.json() as PublicManifest;
  if(m.schemaVersion!==1||!/^[a-zA-Z0-9_-]{8,100}$/.test(m.runId)||!m.catalog||!m.videos)throw Error('表示データの形式が不正です。');
  ensureFresh(m);const data=await verified<Catalog>(m.catalog,m);if(data.header?.runId!==m.runId)throw Error('表示データの世代が一致しません。');
