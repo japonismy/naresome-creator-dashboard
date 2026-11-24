@@ -89,9 +89,12 @@ jobs:
           done
           echo "Uploaded Pages artifact is not visible; publication was not attempted"
           exit 1
-      - uses: actions/deploy-pages@v4
+      - name: Deploy verified Pages artifact
         if: steps.release.outputs.ready == 'true'
         id: deployment
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python sync/deploy_verified_pages.py
       - name: Verify public data generation
         if: steps.release.outputs.ready == 'true'
         env:
